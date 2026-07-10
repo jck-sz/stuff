@@ -1,0 +1,14 @@
+deployment_resource_group_name = "rg-avd-example"
+location                       = "North Europe"
+
+storage_resource_group_name = "rg-storage-example"
+storage_account_name        = "storageexample"
+storage_container_name      = "scripts"
+script_blob_url              = "https://storageexample.blob.core.windows.net/scripts/Configuration_1.0.02714.342.zip"
+
+host_pool_name = "hp-example"
+vm_name        = "avd-01"
+computer_name  = "avd01"
+vm_size        = "Standard_B2s"
+admin_username = "avdlocaladmin"
+admin_password = "REPLACE_WITH_SECRET"
