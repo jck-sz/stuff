@@ -127,23 +127,28 @@ variable "registration_token_rotation_hours" {
 }
 
 locals {
-  dsc_archive_name = basename(var.script_blob_url)
+  package_name = basename(var.script_blob_url)
 
   registration_command = <<-POWERSHELL
     $ErrorActionPreference = 'Stop'
-    $packagePath = Join-Path (Get-Location) '${local.dsc_archive_name}'
+    $packagePath = Join-Path (Get-Location) '${local.package_name}'
     $workingDirectory = Join-Path $env:ProgramData 'AVDRegistration'
     $configurationDirectory = Join-Path $workingDirectory 'Configuration'
-    $mofDirectory = Join-Path $workingDirectory 'MOF'
 
     New-Item -ItemType Directory -Path $workingDirectory -Force | Out-Null
     Remove-Item -Path $configurationDirectory -Recurse -Force -ErrorAction SilentlyContinue
-    Remove-Item -Path $mofDirectory -Recurse -Force -ErrorAction SilentlyContinue
     Expand-Archive -LiteralPath $packagePath -DestinationPath $configurationDirectory -Force
-    . (Join-Path $configurationDirectory 'Configuration.ps1')
+    $sessionHostConfigurationLastUpdateTime = (Get-Date).ToString('o')
+    & (Join-Path $configurationDirectory 'Script-SetupSessionHost.ps1') `
+      -HostPoolName '${replace(var.host_pool_name, "'", "''")}' `
+      -RegistrationInfoToken '${replace(azurerm_virtual_desktop_host_pool_registration_info.this.token, "'", "''")}' `
+      -AadJoin $true `
+      -AadJoinPreview $false `
+      -SessionHostConfigurationLastUpdateTime $sessionHostConfigurationLastUpdateTime
 
-    AddSessionHost -HostPoolName '${replace(var.host_pool_name, "'", "''")}' -RegistrationInfoToken '${replace(azurerm_virtual_desktop_host_pool_registration_info.this.token, "'", "''")}' -AadJoin $true -OutputPath $mofDirectory
-    Start-DscConfiguration -Path $mofDirectory -Wait -Force -Verbose
+    if (-not $?) {
+      throw 'Script-SetupSessionHost.ps1 failed.'
+    }
   POWERSHELL
 }
 
