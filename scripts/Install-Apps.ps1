@@ -44,21 +44,35 @@ $okHex     = @('8A150109', '8A15010B')
 $failures = New-Object System.Collections.Generic.List[string]
 
 # Two guessed fixes (NTFS long paths; ENABLE_PSREMOTING=0) did not change the
-# outcome for dotPDN.PaintDotNet / Microsoft.PowerShell, so the real cause is
-# still unknown. Every install goes through winget - on failure, dump the
-# tail of winget's own diagnostic log (which --verbose-logs makes detailed)
-# so the next failure shows the actual underlying exception instead of
-# another guess.
+# outcome for dotPDN.PaintDotNet / Microsoft.PowerShell, and the expected
+# DiagOutputDir path under $env:LOCALAPPDATA turned out to hold no log at all
+# - $env:LOCALAPPDATA is not reliable in Packer's elevated_user=SYSTEM
+# context (a scheduled task, not a normal profile load), so winget's actual
+# log location in this context is unknown. On failure, search broadly for
+# whatever *.log winget just wrote instead of assuming a path.
 function Write-WinGetDiagLogTail([int]$Lines = 80) {
-    $logDir = Join-Path $env:LOCALAPPDATA 'Packages\Microsoft.DesktopAppInstaller_8wekyb3d8bbwe\LocalState\DiagOutputDir'
-    $log = Get-ChildItem -Path $logDir -Filter '*.log' -ErrorAction SilentlyContinue |
-        Sort-Object LastWriteTime -Descending | Select-Object -First 1
-    if ($log) {
-        Write-Host "--- tail of $($log.FullName) ---"
-        Get-Content -Path $log.FullName -Tail $Lines | ForEach-Object { Write-Host $_ }
-        Write-Host '--- end of winget diagnostic log ---'
-    } else {
-        Write-Host "(no winget diagnostic log found under $logDir)"
+    Write-Host "`$env:LOCALAPPDATA = '$env:LOCALAPPDATA'"
+    $roots = @(
+        $env:LOCALAPPDATA
+        'C:\Windows\System32\config\systemprofile\AppData\Local'
+        'C:\Windows\ServiceProfiles'
+        'C:\ProgramData'
+    ) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique
+
+    $recent = foreach ($root in $roots) {
+        Get-ChildItem -Path $root -Recurse -Filter '*.log' -Force -ErrorAction SilentlyContinue |
+            Where-Object { $_.LastWriteTime -gt (Get-Date).AddMinutes(-3) }
+    }
+    $recent = $recent | Sort-Object LastWriteTime -Descending
+
+    if (-not $recent) {
+        Write-Host "(no .log file written in the last 3 minutes under: $($roots -join ', '))"
+        return
+    }
+    foreach ($log in ($recent | Select-Object -First 3)) {
+        Write-Host "--- tail of $($log.FullName) (modified $($log.LastWriteTime)) ---"
+        Get-Content -Path $log.FullName -Tail $Lines -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_ }
+        Write-Host '--- end ---'
     }
 }
 
