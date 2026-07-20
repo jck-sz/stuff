@@ -1,0 +1,62 @@
+#cloud-config
+# Template for the ADO agent VM. Placeholders (__AZP_*__) are substituted by
+# deploy-agent-vm.sh before being passed to `az vm create --custom-data`.
+package_update: true
+packages:
+  - git
+  - jq
+  - curl
+  - unzip
+
+write_files:
+  - path: /opt/bootstrap/install-agent.sh
+    permissions: "0700"
+    content: |
+      #!/bin/bash
+      set -euo pipefail
+      exec > >(tee /var/log/ado-agent-bootstrap.log) 2>&1
+
+      AZP_URL="__AZP_URL__"
+      AZP_POOL="__AZP_POOL__"
+      AZP_TOKEN="__AZP_TOKEN__"
+
+      # --- Azure CLI (Packer's use_azure_cli_auth + general tooling) ---
+      curl -sL https://aka.ms/InstallAzureCLIDeb | bash
+
+      # --- Packer from the official HashiCorp apt repo ---
+      curl -fsSL https://apt.releases.hashicorp.com/gpg \
+        | gpg --dearmor -o /usr/share/keyrings/hashicorp-archive-keyring.gpg
+      echo "deb [signed-by=/usr/share/keyrings/hashicorp-archive-keyring.gpg] https://apt.releases.hashicorp.com $(lsb_release -cs) main" \
+        > /etc/apt/sources.list.d/hashicorp.list
+      apt-get update -y
+      apt-get install -y packer
+
+      # --- Azure Pipelines agent, run as its own user via systemd ---
+      useradd -m -s /bin/bash azagent || true
+
+      AGENT_VERSION=$(curl -fsS https://api.github.com/repos/microsoft/azure-pipelines-agent/releases/latest \
+        | jq -r '.tag_name' | sed 's/^v//')
+      mkdir -p /opt/azagent
+      cd /opt/azagent
+      curl -fLsS "https://download.agent.dev.azure.com/agent/${AGENT_VERSION}/vsts-agent-linux-x64-${AGENT_VERSION}.tar.gz" \
+        | tar xz
+      ./bin/installdependencies.sh
+      chown -R azagent:azagent /opt/azagent
+
+      sudo -u azagent ./config.sh --unattended \
+        --url "$AZP_URL" \
+        --auth pat --token "$AZP_TOKEN" \
+        --pool "$AZP_POOL" \
+        --agent "$(hostname)" \
+        --replace \
+        --acceptTeeEula
+
+      ./svc.sh install azagent
+      ./svc.sh start
+
+      # The PAT is only needed at registration time - remove it from disk.
+      sed -i 's/AZP_TOKEN="[^"]*"/AZP_TOKEN="(removed)"/' /opt/bootstrap/install-agent.sh
+      rm -f /var/lib/cloud/instance/user-data.txt /var/lib/cloud/instance/user-data.txt.i
+
+runcmd:
+  - [/opt/bootstrap/install-agent.sh]

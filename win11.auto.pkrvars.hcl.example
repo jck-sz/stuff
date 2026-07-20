@@ -1,0 +1,18 @@
+# Copy to win11.auto.pkrvars.hcl and fill in. Packer picks *.auto.pkrvars.hcl
+# up automatically.
+
+subscription_id        = "00000000-0000-0000-0000-000000000000"
+location               = "westeurope"
+gallery_resource_group = "rg-images"
+gallery_name           = "acg_corp_images"
+gallery_image_name     = "win11-ent-dev"
+
+# Image version: leave unset for an auto date-based version (YYYYMMDD.hhmm.0);
+# in CI, set the PKR_VAR_gallery_image_version env var instead (see README).
+# gallery_image_version = "20260720.1.0"
+
+# Optional overrides:
+# source_image_sku    = "win11-24h2-ent"
+# vm_size             = "Standard_D8s_v5"
+# os_disk_size_gb     = 256
+# replication_regions = ["westeurope", "northeurope"]

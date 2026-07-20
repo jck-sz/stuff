@@ -1,0 +1,41 @@
+# Builds the Windows 11 Enterprise image with Packer on the self-hosted agent.
+# Manual trigger only - a run takes 1.5-3 h and creates real Azure resources.
+trigger: none
+
+pool:
+  name: Default          # self-hosted agent pool (vm-ado-agent)
+
+variables:
+  serviceConnection: 'sc-azure-packer'
+  subscriptionId: '<your-subscription-id>'
+  galleryResourceGroup: 'rg-images'
+  galleryName: 'acg_corp_images'
+  galleryImageName: 'win11-ent-dev'
+  # Per-day sequence: 20260720.1.0, 20260720.2.0, ... resets daily (see README)
+  imageVersion: $[format('{0:yyyyMMdd}.{1}.0', pipeline.startTime, counter(format('{0:yyyyMMdd}', pipeline.startTime), 1))]
+
+jobs:
+  - job: build_image
+    displayName: Packer build win11-ent
+    timeoutInMinutes: 300
+    steps:
+      - task: AzureCLI@2
+        displayName: packer build
+        inputs:
+          azureSubscription: $(serviceConnection)
+          scriptType: bash
+          scriptLocation: inlineScript
+          workingDirectory: $(Build.SourcesDirectory)
+          # The AzureCLI task logs `az` in as the service connection's
+          # principal; the template's use_azure_cli_auth picks that up.
+          inlineScript: |
+            set -euo pipefail
+            packer init .
+            packer validate .
+            packer build -timestamp-ui .
+        env:
+          PKR_VAR_subscription_id: $(subscriptionId)
+          PKR_VAR_gallery_resource_group: $(galleryResourceGroup)
+          PKR_VAR_gallery_name: $(galleryName)
+          PKR_VAR_gallery_image_name: $(galleryImageName)
+          PKR_VAR_gallery_image_version: $(imageVersion)

@@ -1,0 +1,4 @@
+win11.auto.pkrvars.hcl
+*.pkrvars.hcl
+!*.pkrvars.hcl.example
+.claude/
