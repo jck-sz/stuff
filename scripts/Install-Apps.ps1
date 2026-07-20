@@ -94,7 +94,11 @@ Install-App 'Notepad++.Notepad++'
 Install-App 'PuTTY.PuTTY'
 Install-App 'dotPDN.PaintDotNet'
 Install-App 'TortoiseGit.TortoiseGit'
-Install-App 'Microsoft.PowerShell'                    # PowerShell 7 (5.1 is in-box)
+
+# Its MSI's "enable PSRemoting" custom action fights the WinRM session Packer
+# is running this very script through (0x80070057) - ENABLE_PSREMOTING=0
+# is the documented workaround.
+Install-App 'Microsoft.PowerShell' @('--custom', 'ENABLE_PSREMOTING=0') # PowerShell 7 (5.1 is in-box)
 Install-App 'Microsoft.AzureCLI'
 
 # .NET / Java / Node runtimes and SDKs - .NET 10 is the current LTS line.

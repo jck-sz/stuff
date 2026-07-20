@@ -20,6 +20,14 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference    = 'SilentlyContinue'
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
+Write-Host '=== Enabling NTFS long path support ==='
+# WinGet's SYSTEM-profile cache lives under a long base path
+# (C:\Windows\System32\config\systemprofile\AppData\Local\...); combined with
+# a nested zip entry this can exceed MAX_PATH (260 chars) and silently break
+# extraction for zip-wrapped installers (e.g. Paint.NET) later in the build.
+New-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' `
+    -Name LongPathsEnabled -Value 1 -PropertyType DWord -Force | Out-Null
+
 $dir = Join-Path $env:TEMP 'winget-bootstrap'
 New-Item -ItemType Directory -Force -Path $dir | Out-Null
 
