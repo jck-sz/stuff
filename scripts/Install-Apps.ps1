@@ -24,6 +24,15 @@ function Resolve-WinGet {
 $winget = Resolve-WinGet
 Write-Host "Using winget: $winget"
 
+# Fail fast if winget cannot actually run (e.g. package not registered for
+# SYSTEM -> 0xC0000135) instead of "failing" every package in the list.
+$wingetVersion = & $winget --version
+if ($LASTEXITCODE -ne 0 -or -not $wingetVersion) {
+    Stop-Transcript | Out-Null
+    throw "winget.exe is not functional (exit $LASTEXITCODE / 0x$('{0:X8}' -f $LASTEXITCODE)). Did Install-WinGet.ps1 run?"
+}
+Write-Host "winget version: $wingetVersion"
+
 # Exit codes that still mean "installed OK":
 #   1641 / 3010  MSI: reboot initiated / reboot required
 #   0x8A150109   APPINSTALLER_CLI_ERROR_INSTALL_REBOOT_REQUIRED_TO_FINISH

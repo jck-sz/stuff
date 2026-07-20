@@ -54,13 +54,24 @@ if ($license) {
 }
 Remove-Item $dir -Recurse -Force
 
+Write-Host '=== Registering App Installer for the SYSTEM account ==='
+# Provisioning only stages the package. Without per-user registration the
+# process has no package identity, so winget.exe dies with 0xC0000135
+# (STATUS_DLL_NOT_FOUND) - its VCLibs/UI.Xaml DLLs resolve via the package
+# graph. Registration also pulls in the staged dependency packages.
+Add-AppxPackage -RegisterByFamilyName -MainPackage 'Microsoft.DesktopAppInstaller_8wekyb3d8bbwe'
+
 $winget = Get-ChildItem "$env:ProgramFiles\WindowsApps\Microsoft.DesktopAppInstaller_*_x64__8wekyb3d8bbwe\winget.exe" -ErrorAction SilentlyContinue |
     Sort-Object { [version]$_.VersionInfo.ProductVersion } |
     Select-Object -Last 1 -ExpandProperty FullName
 if (-not $winget) { throw 'winget.exe not found after provisioning.' }
 
 Write-Host "winget resolved to: $winget"
-& $winget --version
+$version = & $winget --version
+if ($LASTEXITCODE -ne 0 -or -not $version) {
+    throw "winget.exe is not functional (exit $LASTEXITCODE / 0x$('{0:X8}' -f $LASTEXITCODE))."
+}
+Write-Host "winget version: $version"
 
 # The msstore source cannot be used in the SYSTEM context and only slows every
 # call down (EULA prompts, auth). All packages in this build come from the
