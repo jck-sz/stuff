@@ -106,7 +106,15 @@ build {
     restart_timeout = "30m"
   }
 
-  # 4. Generalize the VM so Azure can create clean instances from the image.
+  # 4. Remove build-time WinGet bootstrap artifacts (PS module, caches, logs).
+  #    WinGet/App Installer itself stays in the image - see the script header.
+  provisioner "powershell" {
+    script            = "${path.root}/scripts/Remove-WinGetBootstrap.ps1"
+    elevated_user     = "SYSTEM"
+    elevated_password = ""
+  }
+
+  # 5. Generalize the VM so Azure can create clean instances from the image.
   provisioner "powershell" {
     inline = [
       "if (Get-Service RdAgent -ErrorAction SilentlyContinue) { while ((Get-Service RdAgent).Status -ne 'Running') { Start-Sleep -s 5 } }",

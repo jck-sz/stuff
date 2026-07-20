@@ -16,8 +16,9 @@ output goes to a Compute Gallery with a TrustedLaunch image definition.
 | `win11-ent.pkr.hcl` | Builder (azure-arm, Trusted Launch, WinRM) + provisioning steps |
 | `variables.pkr.hcl` | Input variables |
 | `win11.auto.pkrvars.hcl.example` | Copy to `win11.auto.pkrvars.hcl` and fill in |
-| `scripts/Install-WinGet.ps1` | Bootstraps WinGet for the SYSTEM context (`Microsoft.WinGet.Client` / `Repair-WinGetPackageManager -AllUsers`) |
+| `scripts/Install-WinGet.ps1` | Installs PowerShell 7, then bootstraps WinGet for the SYSTEM context (`Microsoft.WinGet.Client` / `Repair-WinGetPackageManager -AllUsers` under pwsh - the module no longer supports Windows PowerShell) |
 | `scripts/Install-Apps.ps1` | Installs every application via `winget install` |
+| `scripts/Remove-WinGetBootstrap.ps1` | Removes the build-time bootstrap artifacts before sysprep (WinGet itself stays) |
 
 ## Prerequisites
 
