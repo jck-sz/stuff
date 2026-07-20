@@ -106,8 +106,8 @@ build {
     restart_timeout = "30m"
   }
 
-  # 4. Remove build-time WinGet bootstrap artifacts (PS module, caches, logs).
-  #    WinGet/App Installer itself stays in the image - see the script header.
+  # 4. Remove WinGet entirely (it is a build-time tool only, users never get
+  #    it) plus all bootstrap artifacts, and policy-disable App Installer.
   provisioner "powershell" {
     script            = "${path.root}/scripts/Remove-WinGetBootstrap.ps1"
     elevated_user     = "SYSTEM"
