@@ -43,6 +43,25 @@ $okHex     = @('8A150109', '8A15010B')
 
 $failures = New-Object System.Collections.Generic.List[string]
 
+# Two guessed fixes (NTFS long paths; ENABLE_PSREMOTING=0) did not change the
+# outcome for dotPDN.PaintDotNet / Microsoft.PowerShell, so the real cause is
+# still unknown. Every install goes through winget - on failure, dump the
+# tail of winget's own diagnostic log (which --verbose-logs makes detailed)
+# so the next failure shows the actual underlying exception instead of
+# another guess.
+function Write-WinGetDiagLogTail([int]$Lines = 80) {
+    $logDir = Join-Path $env:LOCALAPPDATA 'Packages\Microsoft.DesktopAppInstaller_8wekyb3d8bbwe\LocalState\DiagOutputDir'
+    $log = Get-ChildItem -Path $logDir -Filter '*.log' -ErrorAction SilentlyContinue |
+        Sort-Object LastWriteTime -Descending | Select-Object -First 1
+    if ($log) {
+        Write-Host "--- tail of $($log.FullName) ---"
+        Get-Content -Path $log.FullName -Tail $Lines | ForEach-Object { Write-Host $_ }
+        Write-Host '--- end of winget diagnostic log ---'
+    } else {
+        Write-Host "(no winget diagnostic log found under $logDir)"
+    }
+}
+
 function Install-App {
     param(
         [Parameter(Mandatory)] [string] $Id,
@@ -54,7 +73,7 @@ function Install-App {
         'install', '--exact', '--id', $Id,
         '--silent', '--disable-interactivity',
         '--accept-package-agreements', '--accept-source-agreements',
-        '--source', 'winget'
+        '--source', 'winget', '--verbose-logs'
     ) + $ExtraArgs
     & $winget @wingetArgs
     $code = $LASTEXITCODE
@@ -64,6 +83,7 @@ function Install-App {
     }
     else {
         Write-Warning "FAILED: $Id (exit $code / 0x$hex)"
+        Write-WinGetDiagLogTail
         $failures.Add("$Id (exit $code / 0x$hex)")
     }
 }
@@ -94,10 +114,6 @@ Install-App 'Notepad++.Notepad++'
 Install-App 'PuTTY.PuTTY'
 Install-App 'dotPDN.PaintDotNet'
 Install-App 'TortoiseGit.TortoiseGit'
-
-# Its MSI's "enable PSRemoting" custom action fights the WinRM session Packer
-# is running this very script through (0x80070057) - ENABLE_PSREMOTING=0
-# is the documented workaround.
 Install-App 'Microsoft.PowerShell' @('--custom', 'ENABLE_PSREMOTING=0') # PowerShell 7 (5.1 is in-box)
 Install-App 'Microsoft.AzureCLI'
 
