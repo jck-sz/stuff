@@ -54,12 +54,18 @@ if ($license) {
 }
 Remove-Item $dir -Recurse -Force
 
-Write-Host '=== Registering App Installer for the SYSTEM account ==='
-# Provisioning only stages the package. Without per-user registration the
-# process has no package identity, so winget.exe dies with 0xC0000135
-# (STATUS_DLL_NOT_FOUND) - its VCLibs/UI.Xaml DLLs resolve via the package
-# graph. Registration also pulls in the staged dependency packages.
-Add-AppxPackage -RegisterByFamilyName -MainPackage 'Microsoft.DesktopAppInstaller_8wekyb3d8bbwe'
+Write-Host '=== Installing VC++ 2015-2022 runtime (x64) ==='
+# MSIX packages cannot be registered for SYSTEM (0x80073CF9), so winget runs
+# here without package identity ("full path" mode, supported since 1.6).
+# Without identity its VC runtime cannot come from the VCLibs dependency
+# package graph - the plain desktop VC++ redistributable must be in
+# System32, and fresh Windows 11 marketplace images do not ship it. (A dev
+# image wants it anyway; Visual Studio would install it later regardless.)
+$vcRedist = Join-Path $env:TEMP 'vc_redist.x64.exe'
+Invoke-WebRequest -Uri 'https://aka.ms/vs/17/release/vc_redist.x64.exe' -OutFile $vcRedist -UseBasicParsing
+$proc = Start-Process $vcRedist -ArgumentList '/install', '/quiet', '/norestart' -Wait -PassThru
+if ($proc.ExitCode -notin 0, 3010) { throw "vc_redist.x64.exe failed with exit code $($proc.ExitCode)" }
+Remove-Item $vcRedist -Force
 
 $winget = Get-ChildItem "$env:ProgramFiles\WindowsApps\Microsoft.DesktopAppInstaller_*_x64__8wekyb3d8bbwe\winget.exe" -ErrorAction SilentlyContinue |
     Sort-Object { [version]$_.VersionInfo.ProductVersion } |
