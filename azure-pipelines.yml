@@ -7,7 +7,7 @@ pool:
 
 variables:
   serviceConnection: 'sc-azure-packer'
-  subscriptionId: '<your-subscription-id>'
+  subscriptionId: '1a36bae3-1df9-49a2-81e0-0a84d38074b0'
   galleryResourceGroup: 'rg-images'
   galleryName: 'acg_corp_images'
   galleryImageName: 'win11-ent-dev'
