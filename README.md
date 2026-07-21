@@ -161,10 +161,10 @@ az sig image-version update -g rg-images -r acg_corp_images \
 | MS OLE DB Driver for SQL Server | `Microsoft.SQLServer.OLEDBDriver` | |
 | Node.js | `OpenJS.NodeJS.LTS` | |
 | Notepad++ | `Notepad++.Notepad++` | |
-| Paint.NET | `dotPDN.PaintDotNet` | |
+| Paint.NET | `dotPDN.PaintDotNet` | **Temporarily disabled** — see [Known winget install issues](#known-winget-install-issues) |
 | Power BI Desktop | `Microsoft.PowerBI` | |
 | Power BI Report Builder | `Microsoft.PowerBIReportBuilder` | |
-| PowerShell 7 | `Microsoft.PowerShell` | Windows PowerShell 5.1 is in-box anyway |
+| PowerShell 7 | `Microsoft.PowerShell` | Windows PowerShell 5.1 is in-box anyway; installed by a dedicated provisioner as the `packer` user — see [Known winget install issues](#known-winget-install-issues) |
 | PuTTY | `PuTTY.PuTTY` | |
 | TortoiseGit | `TortoiseGit.TortoiseGit` | |
 | Visual Studio 2022 Enterprise | `Microsoft.VisualStudio.2022.Enterprise` | Edition/workloads configurable in `Install-Apps.ps1`; `Microsoft.VisualStudio.Enterprise` (no year) = VS 2026 |
@@ -185,6 +185,43 @@ az sig image-version update -g rg-images -r acg_corp_images \
   Packer build it would install into the SYSTEM profile where no real user
   can use it, and nvm-windows conflicts with the machine-wide Node.js LTS
   install (it expects to manage Node itself).
+
+## Known winget install issues
+
+WinGet has no first-class support for running as `SYSTEM` (Packer's
+`elevated_user` for `Install-Apps.ps1`, chosen so software lands
+machine-wide rather than in the throwaway `packer` build user's profile —
+see `Install-Apps.ps1`'s header comment). SYSTEM has no MSIX package
+identity, which surfaces as two distinct problems:
+
+- **PowerShell 7 (`Microsoft.PowerShell`)** — its only winget-manifest
+  installer is type MSIX (confirmed via
+  `winget show --id Microsoft.PowerShell --installer-type msi` →
+  "No applicable installer found" — no MSI alternative exists). MSIX/AppX
+  deployment cannot run under SYSTEM at all; this is an OS-level
+  restriction, not a winget bug or a flag to work around. Fixed by giving
+  it its own provisioner (`scripts/Install-PowerShell7.ps1`) that runs as
+  the real `packer` admin user via Packer's own `elevated_user` /
+  `elevated_password = "${build.WinRMPassword}"` — the same mechanism every
+  other provisioner in `win11-ent.pkr.hcl` already uses, not a hand-rolled
+  credential/scheduled-task trick.
+- **Paint.NET (`dotPDN.PaintDotNet`)** — **currently disabled** in
+  `Install-Apps.ps1`. Its winget installer is a zip archive, and extraction
+  fails under SYSTEM with `Failed to extract the contents of the archive`
+  (exit `0x8A15005C`). Reproduced across multiple pipeline runs, including 3
+  immediate retries in a row (`Install-App` retries transient winget
+  failures automatically). On a live diagnostic VM, manually re-running the
+  identical `winget install` command a few minutes after the failure
+  succeeded immediately — so this looks session/timing-dependent rather
+  than a hard, permanent block like PowerShell 7's, but the actual trigger
+  is still unidentified. Options for a real fix, not yet tried: give it its
+  own `packer`-user provisioner like PowerShell 7; or a longer/backoff retry
+  delay in `Install-App`.
+
+If you hit a new winget-under-SYSTEM failure, don't debug it live in place —
+comment out the offending `Install-App` call (with a note here and in the
+script), confirm the rest of the list still installs cleanly, then
+investigate that one package separately.
 
 ## Notes & caveats
 

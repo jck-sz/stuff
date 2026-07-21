@@ -100,7 +100,15 @@ Install-App 'Google.Chrome'
 Install-App 'Mozilla.Firefox'
 Install-App 'Notepad++.Notepad++'
 Install-App 'PuTTY.PuTTY'
-Install-App 'dotPDN.PaintDotNet'
+# TEMPORARILY DISABLED: winget's zip-archive extraction for this package
+# fails under SYSTEM ("Failed to extract the contents of the archive",
+# 0x8A15005C) - reproduced across multiple pipeline runs, including 3
+# immediate retries in a row. A live diagnostic VM showed the exact same
+# command succeeding when re-run manually minutes later, so it is
+# session-state-dependent, not a permanent failure, but the real trigger is
+# still unidentified. See README "Known winget install issues" before
+# re-enabling.
+# Install-App 'dotPDN.PaintDotNet'
 Install-App 'TortoiseGit.TortoiseGit'
 # PowerShell 7 (5.1 is in-box) is installed separately, by
 # scripts/Install-PowerShell7.ps1 as the real 'packer' user - its only
