@@ -34,8 +34,10 @@ write_files:
       # --- Azure Pipelines agent, run as its own user via systemd ---
       useradd -m -s /bin/bash azagent || true
 
-      AGENT_VERSION=$(curl -fsS https://api.github.com/repos/microsoft/azure-pipelines-agent/releases/latest \
-        | jq -r '.tag_name' | sed 's/^v//')
+      # Pinned rather than resolved via the GitHub releases API at deploy
+      # time - one less external dependency, and reproducible. Bump by
+      # hand when needed: https://github.com/microsoft/azure-pipelines-agent/releases
+      AGENT_VERSION="5.275.0"
       mkdir -p /opt/azagent
       cd /opt/azagent
       curl -fLsS "https://download.agent.dev.azure.com/agent/${AGENT_VERSION}/vsts-agent-linux-x64-${AGENT_VERSION}.tar.gz" \

@@ -1,66 +1,36 @@
 <#
     .SYNOPSIS
-    Bootstraps WinGet for use in the non-interactive SYSTEM context.
+    Prepares the already-provisioned WinGet (App Installer) for the
+    non-interactive SYSTEM context - no download.
 
-    WinGet (App Installer) is a per-user MSIX package: on a fresh marketplace
-    image no interactive logon has ever happened, so winget.exe is not
-    usable from the SYSTEM account Packer provisions with. The
-    Microsoft.WinGet.Client module (Repair-WinGetPackageManager) is not
-    reliable headless: 1.11+ dropped Windows PowerShell support, and under
-    pwsh it fails in a WinRM/SYSTEM session ("Specified method is not
-    supported"). So this provisions the package machine-wide with DISM
-    instead: download the latest App Installer msixbundle + dependencies
-    from the official winget-cli release and Add-AppxProvisionedPackage,
-    after which winget.exe can be invoked by full path from SYSTEM.
+    Windows 11 marketplace images already ship App Installer, provisioned
+    machine-wide. It just isn't directly usable from SYSTEM: no interactive
+    logon has ever happened, so it has no per-account package identity/
+    registration, which the Microsoft.WinGet.Client module (the documented
+    repair path) depends on and which is impossible to grant to SYSTEM
+    (0x80073CF9). This script does not provision or download anything - it
+    only works around the identity gap for the copy already on disk:
+      - installs the plain VC++ redistributable, since winget invoked
+        without package identity ("full path" mode, supported since 1.6)
+        can't pull its VC runtime from the normal VCLibs dependency graph
+      - pre-creates winget's own per-account data folder, since without
+        identity it never creates this itself and at least one operation
+        (zip-archive extraction) fails immediately without it
 
     WinGet is a build-time tool only for this image - it is removed again
     by Remove-WinGetBootstrap.ps1 before sysprep.
 #>
 $ErrorActionPreference = 'Stop'
 $ProgressPreference    = 'SilentlyContinue'
-[Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
-$dir = Join-Path $env:TEMP 'winget-bootstrap'
-New-Item -ItemType Directory -Force -Path $dir | Out-Null
-
-Write-Host '=== Downloading latest App Installer release ==='
-$release = Invoke-RestMethod 'https://api.github.com/repos/microsoft/winget-cli/releases/latest'
-Write-Host "Release: $($release.tag_name)"
-
-function Get-ReleaseAsset([string]$Pattern, [switch]$Optional) {
-    $asset = $release.assets | Where-Object name -like $Pattern | Select-Object -First 1
-    if (-not $asset) {
-        if ($Optional) { return $null }
-        throw "Release asset matching '$Pattern' not found."
-    }
-    $path = Join-Path $dir $asset.name
-    Invoke-WebRequest -Uri $asset.browser_download_url -OutFile $path -UseBasicParsing
-    $path
+Write-Host '=== Verifying App Installer is already provisioned on the base image ==='
+$provisioned = Get-AppxProvisionedPackage -Online | Where-Object DisplayName -eq 'Microsoft.DesktopAppInstaller'
+if (-not $provisioned) {
+    throw 'Microsoft.DesktopAppInstaller is not provisioned on this base image. It normally ships on Windows 11 marketplace images - if the base image changed, restore the download-and-provision step this script used to have.'
 }
-
-$bundle  = Get-ReleaseAsset 'Microsoft.DesktopAppInstaller_*.msixbundle'
-$depsZip = Get-ReleaseAsset 'DesktopAppInstaller_Dependencies.zip'
-$license = Get-ReleaseAsset '*License1.xml' -Optional
-
-Expand-Archive -Path $depsZip -DestinationPath (Join-Path $dir 'deps') -Force
-$deps = Get-ChildItem (Join-Path $dir 'deps\x64\*.appx') | Select-Object -ExpandProperty FullName
-if (-not $deps) { throw 'No x64 dependency packages found in DesktopAppInstaller_Dependencies.zip.' }
-
-Write-Host '=== Provisioning App Installer machine-wide (DISM) ==='
-if ($license) {
-    Add-AppxProvisionedPackage -Online -PackagePath $bundle -DependencyPackagePath $deps -LicensePath $license | Out-Null
-} else {
-    Add-AppxProvisionedPackage -Online -PackagePath $bundle -DependencyPackagePath $deps -SkipLicense | Out-Null
-}
-Remove-Item $dir -Recurse -Force
+Write-Host "Found: $($provisioned.DisplayName) $($provisioned.Version)"
 
 Write-Host '=== Installing VC++ 2015-2022 runtime (x64) ==='
-# MSIX packages cannot be registered for SYSTEM (0x80073CF9), so winget runs
-# here without package identity ("full path" mode, supported since 1.6).
-# Without identity its VC runtime cannot come from the VCLibs dependency
-# package graph - the plain desktop VC++ redistributable must be in
-# System32, and fresh Windows 11 marketplace images do not ship it. (A dev
-# image wants it anyway; Visual Studio would install it later regardless.)
 $vcRedist = Join-Path $env:TEMP 'vc_redist.x64.exe'
 Invoke-WebRequest -Uri 'https://aka.ms/vs/17/release/vc_redist.x64.exe' -OutFile $vcRedist -UseBasicParsing
 $proc = Start-Process $vcRedist -ArgumentList '/install', '/quiet', '/norestart' -Wait -PassThru
@@ -70,14 +40,9 @@ Remove-Item $vcRedist -Force
 $winget = Get-ChildItem "$env:ProgramFiles\WindowsApps\Microsoft.DesktopAppInstaller_*_x64__8wekyb3d8bbwe\winget.exe" -ErrorAction SilentlyContinue |
     Sort-Object { [version]$_.VersionInfo.ProductVersion } |
     Select-Object -Last 1 -ExpandProperty FullName
-if (-not $winget) { throw 'winget.exe not found after provisioning.' }
+if (-not $winget) { throw 'winget.exe not found even though the package is provisioned - unexpected layout.' }
 
 Write-Host '=== Pre-creating WinGet per-account data folder ==='
-# Confirmed by live repro: without package identity/registration (impossible
-# for SYSTEM - see above), winget never creates its own
-# LocalState\{DiagOutputDir,TempState,Settings} folder tree, and at least one
-# operation that depends on it (zip-archive extraction, e.g. Paint.NET) fails
-# immediately as a result. Pre-creating the tree fixes it - confirmed live.
 $wingetData = Join-Path $env:LOCALAPPDATA 'Packages\Microsoft.DesktopAppInstaller_8wekyb3d8bbwe\LocalState'
 New-Item -ItemType Directory -Force -Path @(
     $wingetData

@@ -16,7 +16,7 @@ output goes to a Compute Gallery with a TrustedLaunch image definition.
 | `win11-ent.pkr.hcl` | Builder (azure-arm, Trusted Launch, WinRM) + provisioning steps |
 | `variables.pkr.hcl` | Input variables |
 | `win11.auto.pkrvars.hcl.example` | Copy to `win11.auto.pkrvars.hcl` and fill in |
-| `scripts/Install-WinGet.ps1` | Provisions the latest App Installer machine-wide via DISM (`Add-AppxProvisionedPackage`) so winget is usable from SYSTEM - the WinGet PowerShell module is not reliable headless |
+| `scripts/Install-WinGet.ps1` | Makes the App Installer already provisioned on the base image usable from SYSTEM - no download; the WinGet PowerShell module is not reliable headless |
 | `scripts/Install-Apps.ps1` | Installs every application via `winget install` |
 | `scripts/Remove-WinGetBootstrap.ps1` | Removes WinGet from the image before sysprep (build-time tool only) and policy-disables App Installer for all users |
 
@@ -218,7 +218,8 @@ investigate that one package separately.
   reproducible images.
 - App installs run as **SYSTEM** (Packer `elevated_user = "SYSTEM"`) because
   WinGet's MSIX-based CLI cannot run in a plain WinRM session;
-  `Install-WinGet.ps1` provisions it machine-wide first.
+  `Install-WinGet.ps1` unblocks the copy already on the base image first -
+  see [Known winget install issues](#known-winget-install-issues).
 - Visual Studio installs the workloads listed in `Install-Apps.ps1`
   (.NET desktop, ASP.NET/web, Azure, Data + recommended components) — adjust
   the `--add` list to your needs.
