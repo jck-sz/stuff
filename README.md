@@ -18,6 +18,8 @@ output goes to a Compute Gallery with a TrustedLaunch image definition.
 | `win11.auto.pkrvars.hcl.example` | Copy to `win11.auto.pkrvars.hcl` and fill in |
 | `scripts/Install-WinGet.ps1` | Provisions the latest App Installer machine-wide via DISM (`Add-AppxProvisionedPackage`) so winget is usable from SYSTEM - the WinGet PowerShell module is not reliable headless |
 | `scripts/Install-Apps.ps1` | Installs every application via `winget install` |
+| `scripts/Grant-PackerBatchLogon.ps1` | Grants the `packer` user "Log on as a batch job" - required for Packer's `elevated_user` to run as a non-SYSTEM account (see [Known winget install issues](#known-winget-install-issues)) |
+| `scripts/Install-PowerShell7.ps1` | Installs PowerShell 7 via winget as the `packer` user - its only winget installer is MSIX, which cannot deploy under SYSTEM |
 | `scripts/Remove-WinGetBootstrap.ps1` | Removes WinGet from the image before sysprep (build-time tool only) and policy-disables App Installer for all users |
 
 ## Prerequisites

@@ -20,14 +20,6 @@ $ErrorActionPreference = 'Stop'
 $ProgressPreference    = 'SilentlyContinue'
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
-Write-Host '=== Enabling NTFS long path support ==='
-# General hardening for the long SYSTEM-profile base path
-# (C:\Windows\System32\config\systemprofile\AppData\Local\...) - harmless to
-# enable even though it turned out not to be the cause of the zip-extraction
-# failure fixed further below.
-New-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' `
-    -Name LongPathsEnabled -Value 1 -PropertyType DWord -Force | Out-Null
-
 $dir = Join-Path $env:TEMP 'winget-bootstrap'
 New-Item -ItemType Directory -Force -Path $dir | Out-Null
 
