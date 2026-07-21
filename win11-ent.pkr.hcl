@@ -103,24 +103,25 @@ build {
 
   # 2b. PowerShell 7's only winget installer is MSIX, and MSIX/AppX
   #     deployment cannot run under SYSTEM at all (OS-level restriction, not
-  #     a winget flag/workaround) - so this one package runs as the real
-  #     'packer' admin user instead, via Packer's own elevated_user, same as
-  #     every other provisioner here. That mechanism runs the script through
-  #     a scheduled task; a non-SYSTEM account needs "Log on as a batch job"
-  #     first, or the task sits in Queued forever and the build hangs.
+  #     a winget flag/workaround) - so this one package runs as a dedicated
+  #     local admin instead, via Packer's own elevated_user, same mechanism
+  #     as every other provisioner here. It cannot reuse 'packer' itself
+  #     (the WinRM communicator's own account, winrm_username above): that
+  #     was confirmed live to hang forever (scheduled task stuck in
+  #     Queued), even with "Log on as a batch job" granted directly to it -
+  #     something about reusing the account that already holds the build's
+  #     WinRM session. A fresh, otherwise-idle account avoids that.
   provisioner "powershell" {
-    script            = "${path.root}/scripts/Grant-PackerBatchLogon.ps1"
+    script            = "${path.root}/scripts/New-PowerShell7InstallUser.ps1"
     elevated_user     = "SYSTEM"
     elevated_password = ""
+    environment_vars  = ["PACKER_PS7_INSTALL_PWD=${build.WinRMPassword}"]
     timeout           = "10m"
   }
 
-  # timeout guards against a repeat of the exact hang this fixes: an
-  # elevated_user scheduled task stuck in Queued forever (missing batch
-  # logon right) previously ran unbounded until manually noticed/cancelled.
   provisioner "powershell" {
     script            = "${path.root}/scripts/Install-PowerShell7.ps1"
-    elevated_user     = "packer"
+    elevated_user     = "ps7installer"
     elevated_password = "${build.WinRMPassword}"
     timeout           = "10m"
   }

@@ -18,7 +18,7 @@ output goes to a Compute Gallery with a TrustedLaunch image definition.
 | `win11.auto.pkrvars.hcl.example` | Copy to `win11.auto.pkrvars.hcl` and fill in |
 | `scripts/Install-WinGet.ps1` | Provisions the latest App Installer machine-wide via DISM (`Add-AppxProvisionedPackage`) so winget is usable from SYSTEM - the WinGet PowerShell module is not reliable headless |
 | `scripts/Install-Apps.ps1` | Installs every application via `winget install` |
-| `scripts/Grant-PackerBatchLogon.ps1` | Grants the `packer` user "Log on as a batch job" - required for Packer's `elevated_user` to run as a non-SYSTEM account (see [Known winget install issues](#known-winget-install-issues)) |
+| `scripts/New-PowerShell7InstallUser.ps1` | Creates a dedicated local admin (`ps7installer`) with "Log on as a batch job" for the PowerShell 7 install step (see [Known winget install issues](#known-winget-install-issues)) |
 | `scripts/Install-PowerShell7.ps1` | Installs PowerShell 7 via winget as the `packer` user - its only winget installer is MSIX, which cannot deploy under SYSTEM |
 | `scripts/Remove-WinGetBootstrap.ps1` | Removes WinGet from the image before sysprep (build-time tool only) and policy-disables App Installer for all users |
 
@@ -166,7 +166,7 @@ az sig image-version update -g rg-images -r acg_corp_images \
 | Paint.NET | `dotPDN.PaintDotNet` | **Temporarily disabled** — see [Known winget install issues](#known-winget-install-issues) |
 | Power BI Desktop | `Microsoft.PowerBI` | |
 | Power BI Report Builder | `Microsoft.PowerBIReportBuilder` | |
-| PowerShell 7 | `Microsoft.PowerShell` | Windows PowerShell 5.1 is in-box anyway; installed by a dedicated provisioner as the `packer` user — see [Known winget install issues](#known-winget-install-issues) |
+| PowerShell 7 | `Microsoft.PowerShell` | Windows PowerShell 5.1 is in-box anyway; installed by a dedicated provisioner as a dedicated local admin (`ps7installer`) — see [Known winget install issues](#known-winget-install-issues) |
 | PuTTY | `PuTTY.PuTTY` | |
 | TortoiseGit | `TortoiseGit.TortoiseGit` | |
 | Visual Studio 2022 Enterprise | `Microsoft.VisualStudio.2022.Enterprise` | Edition/workloads configurable in `Install-Apps.ps1`; `Microsoft.VisualStudio.Enterprise` (no year) = VS 2026 |
@@ -202,11 +202,18 @@ identity, which surfaces as two distinct problems:
   "No applicable installer found" — no MSI alternative exists). MSIX/AppX
   deployment cannot run under SYSTEM at all; this is an OS-level
   restriction, not a winget bug or a flag to work around. Fixed by giving
-  it its own provisioner (`scripts/Install-PowerShell7.ps1`) that runs as
-  the real `packer` admin user via Packer's own `elevated_user` /
-  `elevated_password = "${build.WinRMPassword}"` — the same mechanism every
-  other provisioner in `win11-ent.pkr.hcl` already uses, not a hand-rolled
-  credential/scheduled-task trick.
+  it its own provisioner (`scripts/Install-PowerShell7.ps1`) that runs via
+  Packer's own `elevated_user` — the same mechanism every other provisioner
+  in `win11-ent.pkr.hcl` already uses, not a hand-rolled credential/
+  scheduled-task trick. It cannot reuse `packer` itself (`winrm_username`,
+  the account already holding the build's WinRM session): confirmed live
+  that its scheduled task then sits in `Queued` forever and the build hangs
+  indefinitely, even after granting `packer` "Log on as a batch job"
+  directly (no `SeDenyBatchLogonRight`, no other policy conflict, and the
+  Task Scheduler event log recorded nothing — the task never even attempted
+  to start). `scripts/New-PowerShell7InstallUser.ps1` creates a separate,
+  otherwise-idle local admin (`ps7installer`) instead, which does not hit
+  this.
 - **Paint.NET (`dotPDN.PaintDotNet`)** — **currently disabled** in
   `Install-Apps.ps1`. Its winget installer is a zip archive, and extraction
   fails under SYSTEM with `Failed to extract the contents of the archive`
@@ -217,8 +224,8 @@ identity, which surfaces as two distinct problems:
   succeeded immediately — so this looks session/timing-dependent rather
   than a hard, permanent block like PowerShell 7's, but the actual trigger
   is still unidentified. Options for a real fix, not yet tried: give it its
-  own `packer`-user provisioner like PowerShell 7; or a longer/backoff retry
-  delay in `Install-App`.
+  own dedicated-user provisioner like PowerShell 7; or a longer/backoff
+  retry delay in `Install-App`.
 
 If you hit a new winget-under-SYSTEM failure, don't debug it live in place —
 comment out the offending `Install-App` call (with a note here and in the
