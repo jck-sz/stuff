@@ -94,10 +94,15 @@ build {
 
   # 2. Install all applications via WinGet. Runs as SYSTEM so everything
   #    lands machine-wide, not in the throwaway 'packer' user profile.
+  #    Exception: Microsoft.PowerShell's only winget installer is MSIX, and
+  #    MSIX/AppX deployment cannot run under SYSTEM at all (OS-level
+  #    restriction) - the script impersonates the real 'packer' admin user
+  #    for just that one package, see PACKER_WINRM_PWD usage in the script.
   provisioner "powershell" {
     script            = "${path.root}/scripts/Install-Apps.ps1"
     elevated_user     = "SYSTEM"
     elevated_password = ""
+    environment_vars  = ["PACKER_WINRM_PWD=${build.WinRMPassword}"]
     timeout           = "3h"
   }
 

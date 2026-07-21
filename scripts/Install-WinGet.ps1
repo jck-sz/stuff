@@ -21,10 +21,10 @@ $ProgressPreference    = 'SilentlyContinue'
 [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
 
 Write-Host '=== Enabling NTFS long path support ==='
-# WinGet's SYSTEM-profile cache lives under a long base path
-# (C:\Windows\System32\config\systemprofile\AppData\Local\...); combined with
-# a nested zip entry this can exceed MAX_PATH (260 chars) and silently break
-# extraction for zip-wrapped installers (e.g. Paint.NET) later in the build.
+# General hardening for the long SYSTEM-profile base path
+# (C:\Windows\System32\config\systemprofile\AppData\Local\...) - harmless to
+# enable even though it turned out not to be the cause of the zip-extraction
+# failure fixed further below.
 New-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\FileSystem' `
     -Name LongPathsEnabled -Value 1 -PropertyType DWord -Force | Out-Null
 
@@ -79,6 +79,20 @@ $winget = Get-ChildItem "$env:ProgramFiles\WindowsApps\Microsoft.DesktopAppInsta
     Sort-Object { [version]$_.VersionInfo.ProductVersion } |
     Select-Object -Last 1 -ExpandProperty FullName
 if (-not $winget) { throw 'winget.exe not found after provisioning.' }
+
+Write-Host '=== Pre-creating WinGet per-account data folder ==='
+# Confirmed by live repro: without package identity/registration (impossible
+# for SYSTEM - see above), winget never creates its own
+# LocalState\{DiagOutputDir,TempState,Settings} folder tree, and at least one
+# operation that depends on it (zip-archive extraction, e.g. Paint.NET) fails
+# immediately as a result. Pre-creating the tree fixes it - confirmed live.
+$wingetData = Join-Path $env:LOCALAPPDATA 'Packages\Microsoft.DesktopAppInstaller_8wekyb3d8bbwe\LocalState'
+New-Item -ItemType Directory -Force -Path @(
+    $wingetData
+    Join-Path $wingetData 'DiagOutputDir'
+    Join-Path $wingetData 'TempState'
+    Join-Path $wingetData 'Settings'
+) | Out-Null
 
 Write-Host "winget resolved to: $winget"
 $version = & $winget --version

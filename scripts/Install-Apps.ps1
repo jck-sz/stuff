@@ -43,39 +43,6 @@ $okHex     = @('8A150109', '8A15010B')
 
 $failures = New-Object System.Collections.Generic.List[string]
 
-# Two guessed fixes (NTFS long paths; ENABLE_PSREMOTING=0) did not change the
-# outcome for dotPDN.PaintDotNet / Microsoft.PowerShell, and the expected
-# DiagOutputDir path under $env:LOCALAPPDATA turned out to hold no log at all
-# - $env:LOCALAPPDATA is not reliable in Packer's elevated_user=SYSTEM
-# context (a scheduled task, not a normal profile load), so winget's actual
-# log location in this context is unknown. On failure, search broadly for
-# whatever *.log winget just wrote instead of assuming a path.
-function Write-WinGetDiagLogTail([int]$Lines = 80) {
-    Write-Host "`$env:LOCALAPPDATA = '$env:LOCALAPPDATA'"
-    $roots = @(
-        $env:LOCALAPPDATA
-        'C:\Windows\System32\config\systemprofile\AppData\Local'
-        'C:\Windows\ServiceProfiles'
-        'C:\ProgramData'
-    ) | Where-Object { $_ -and (Test-Path $_) } | Select-Object -Unique
-
-    $recent = foreach ($root in $roots) {
-        Get-ChildItem -Path $root -Recurse -Filter '*.log' -Force -ErrorAction SilentlyContinue |
-            Where-Object { $_.LastWriteTime -gt (Get-Date).AddMinutes(-3) }
-    }
-    $recent = $recent | Sort-Object LastWriteTime -Descending
-
-    if (-not $recent) {
-        Write-Host "(no .log file written in the last 3 minutes under: $($roots -join ', '))"
-        return
-    }
-    foreach ($log in ($recent | Select-Object -First 3)) {
-        Write-Host "--- tail of $($log.FullName) (modified $($log.LastWriteTime)) ---"
-        Get-Content -Path $log.FullName -Tail $Lines -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_ }
-        Write-Host '--- end ---'
-    }
-}
-
 function Install-App {
     param(
         [Parameter(Mandatory)] [string] $Id,
@@ -87,7 +54,7 @@ function Install-App {
         'install', '--exact', '--id', $Id,
         '--silent', '--disable-interactivity',
         '--accept-package-agreements', '--accept-source-agreements',
-        '--source', 'winget', '--verbose-logs'
+        '--source', 'winget'
     ) + $ExtraArgs
     & $winget @wingetArgs
     $code = $LASTEXITCODE
@@ -97,8 +64,46 @@ function Install-App {
     }
     else {
         Write-Warning "FAILED: $Id (exit $code / 0x$hex)"
-        Write-WinGetDiagLogTail
         $failures.Add("$Id (exit $code / 0x$hex)")
+    }
+}
+
+# Microsoft.PowerShell's only winget-manifest installer is type MSIX
+# (confirmed via 'winget show --installer-type msi' -> "No applicable
+# installer found"). MSIX/AppX deployment cannot run under SYSTEM at all -
+# an OS-level restriction, not a winget bug or flag to work around - so this
+# one package is installed via the exact same winget executable and command,
+# just impersonating the real 'packer' admin user, who can. Every other
+# package stays on SYSTEM/machine-wide as before.
+function Install-PowerShellAsPackerUser {
+    Write-Host ''
+    Write-Host '=== Installing Microsoft.PowerShell (as the packer user - its only installer is MSIX, unsupported under SYSTEM) ==='
+    if (-not $env:PACKER_WINRM_PWD) {
+        Write-Warning 'FAILED: Microsoft.PowerShell (PACKER_WINRM_PWD not set - see win11-ent.pkr.hcl environment_vars)'
+        $failures.Add('Microsoft.PowerShell (PACKER_WINRM_PWD not set)')
+        return
+    }
+    $cred = New-Object System.Management.Automation.PSCredential(
+        'packer', (ConvertTo-SecureString $env:PACKER_WINRM_PWD -AsPlainText -Force))
+    $stdout = Join-Path $env:TEMP 'winget-ps7-stdout.log'
+    $stderr = Join-Path $env:TEMP 'winget-ps7-stderr.log'
+    $proc = Start-Process -FilePath $winget -ArgumentList @(
+        'install', '--exact', '--id', 'Microsoft.PowerShell',
+        '--silent', '--disable-interactivity', '--scope', 'machine',
+        '--accept-package-agreements', '--accept-source-agreements',
+        '--source', 'winget'
+    ) -Credential $cred -WorkingDirectory $env:SystemRoot `
+      -RedirectStandardOutput $stdout -RedirectStandardError $stderr -Wait -PassThru
+    Get-Content $stdout, $stderr -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_ }
+    Remove-Item $stdout, $stderr -Force -ErrorAction SilentlyContinue
+
+    $code = $proc.ExitCode
+    $hex  = '{0:X8}' -f $code
+    if (($okDecimal -contains $code) -or ($okHex -contains $hex)) {
+        Write-Host "=== OK: Microsoft.PowerShell (exit $code) ==="
+    } else {
+        Write-Warning "FAILED: Microsoft.PowerShell (exit $code / 0x$hex)"
+        $failures.Add("Microsoft.PowerShell (exit $code / 0x$hex)")
     }
 }
 
@@ -128,7 +133,7 @@ Install-App 'Notepad++.Notepad++'
 Install-App 'PuTTY.PuTTY'
 Install-App 'dotPDN.PaintDotNet'
 Install-App 'TortoiseGit.TortoiseGit'
-Install-App 'Microsoft.PowerShell' @('--custom', 'ENABLE_PSREMOTING=0') # PowerShell 7 (5.1 is in-box)
+Install-PowerShellAsPackerUser                        # PowerShell 7 (5.1 is in-box)
 Install-App 'Microsoft.AzureCLI'
 
 # .NET / Java / Node runtimes and SDKs - .NET 10 is the current LTS line.
