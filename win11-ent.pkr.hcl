@@ -105,11 +105,24 @@ build {
   #     deployment cannot run under SYSTEM at all (OS-level restriction, not
   #     a winget flag/workaround) - so this one package runs as the real
   #     'packer' admin user instead, via Packer's own elevated_user, same as
-  #     every other provisioner here.
+  #     every other provisioner here. That mechanism runs the script through
+  #     a scheduled task; a non-SYSTEM account needs "Log on as a batch job"
+  #     first, or the task sits in Queued forever and the build hangs.
+  provisioner "powershell" {
+    script            = "${path.root}/scripts/Grant-PackerBatchLogon.ps1"
+    elevated_user     = "SYSTEM"
+    elevated_password = ""
+    timeout           = "10m"
+  }
+
+  # timeout guards against a repeat of the exact hang this fixes: an
+  # elevated_user scheduled task stuck in Queued forever (missing batch
+  # logon right) previously ran unbounded until manually noticed/cancelled.
   provisioner "powershell" {
     script            = "${path.root}/scripts/Install-PowerShell7.ps1"
     elevated_user     = "packer"
     elevated_password = "${build.WinRMPassword}"
+    timeout           = "10m"
   }
 
   # 3. Reboot to flush pending operations (Visual Studio, runtimes, OLE DB driver).
