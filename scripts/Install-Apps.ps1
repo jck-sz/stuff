@@ -56,55 +56,24 @@ function Install-App {
         '--accept-package-agreements', '--accept-source-agreements',
         '--source', 'winget'
     ) + $ExtraArgs
-    & $winget @wingetArgs
-    $code = $LASTEXITCODE
-    $hex  = '{0:X8}' -f $code
-    if (($okDecimal -contains $code) -or ($okHex -contains $hex)) {
-        Write-Host "=== OK: $Id (exit $code) ==="
-    }
-    else {
-        Write-Warning "FAILED: $Id (exit $code / 0x$hex)"
-        $failures.Add("$Id (exit $code / 0x$hex)")
-    }
-}
 
-# Microsoft.PowerShell's only winget-manifest installer is type MSIX
-# (confirmed via 'winget show --installer-type msi' -> "No applicable
-# installer found"). MSIX/AppX deployment cannot run under SYSTEM at all -
-# an OS-level restriction, not a winget bug or flag to work around - so this
-# one package is installed via the exact same winget executable and command,
-# just impersonating the real 'packer' admin user, who can. Every other
-# package stays on SYSTEM/machine-wide as before.
-function Install-PowerShellAsPackerUser {
-    Write-Host ''
-    Write-Host '=== Installing Microsoft.PowerShell (as the packer user - its only installer is MSIX, unsupported under SYSTEM) ==='
-    if (-not $env:PACKER_WINRM_PWD) {
-        Write-Warning 'FAILED: Microsoft.PowerShell (PACKER_WINRM_PWD not set - see win11-ent.pkr.hcl environment_vars)'
-        $failures.Add('Microsoft.PowerShell (PACKER_WINRM_PWD not set)')
-        return
+    # Confirmed live: winget's zip-archive extraction can fail on its very
+    # first use in a session ("Failed to extract the contents of the
+    # archive") and then succeed immediately on an identical retry - a
+    # one-time warm-up flake, not a permanent condition. Retry twice before
+    # giving up.
+    for ($attempt = 1; $attempt -le 3; $attempt++) {
+        & $winget @wingetArgs
+        $code = $LASTEXITCODE
+        $hex  = '{0:X8}' -f $code
+        if (($okDecimal -contains $code) -or ($okHex -contains $hex)) {
+            Write-Host "=== OK: $Id (exit $code) ==="
+            return
+        }
+        Write-Warning "FAILED (attempt $attempt/3): $Id (exit $code / 0x$hex)"
+        if ($attempt -lt 3) { Start-Sleep -Seconds 5 }
     }
-    $cred = New-Object System.Management.Automation.PSCredential(
-        'packer', (ConvertTo-SecureString $env:PACKER_WINRM_PWD -AsPlainText -Force))
-    $stdout = Join-Path $env:TEMP 'winget-ps7-stdout.log'
-    $stderr = Join-Path $env:TEMP 'winget-ps7-stderr.log'
-    $proc = Start-Process -FilePath $winget -ArgumentList @(
-        'install', '--exact', '--id', 'Microsoft.PowerShell',
-        '--silent', '--disable-interactivity', '--scope', 'machine',
-        '--accept-package-agreements', '--accept-source-agreements',
-        '--source', 'winget'
-    ) -Credential $cred -WorkingDirectory $env:SystemRoot `
-      -RedirectStandardOutput $stdout -RedirectStandardError $stderr -Wait -PassThru
-    Get-Content $stdout, $stderr -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_ }
-    Remove-Item $stdout, $stderr -Force -ErrorAction SilentlyContinue
-
-    $code = $proc.ExitCode
-    $hex  = '{0:X8}' -f $code
-    if (($okDecimal -contains $code) -or ($okHex -contains $hex)) {
-        Write-Host "=== OK: Microsoft.PowerShell (exit $code) ==="
-    } else {
-        Write-Warning "FAILED: Microsoft.PowerShell (exit $code / 0x$hex)"
-        $failures.Add("Microsoft.PowerShell (exit $code / 0x$hex)")
-    }
+    $failures.Add("$Id (exit $code / 0x$hex)")
 }
 
 # --- Visual Studio configuration ---------------------------------------------
@@ -133,7 +102,9 @@ Install-App 'Notepad++.Notepad++'
 Install-App 'PuTTY.PuTTY'
 Install-App 'dotPDN.PaintDotNet'
 Install-App 'TortoiseGit.TortoiseGit'
-Install-PowerShellAsPackerUser                        # PowerShell 7 (5.1 is in-box)
+# PowerShell 7 (5.1 is in-box) is installed separately, by
+# scripts/Install-PowerShell7.ps1 as the real 'packer' user - its only
+# winget installer is MSIX, which cannot be deployed under SYSTEM.
 Install-App 'Microsoft.AzureCLI'
 
 # .NET / Java / Node runtimes and SDKs - .NET 10 is the current LTS line.
