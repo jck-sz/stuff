@@ -115,12 +115,16 @@ build {
   }
 
   # 5. Generalize the VM so Azure can create clean instances from the image.
+  #    Which of the two ImageState values sysprep sets on completion depends
+  #    on the Windows build - confirmed live that this win11-24h2 image uses
+  #    RESEAL, not the RESCHEDULE value alone previously checked here, which
+  #    left this step polling forever after sysprep had already succeeded.
   provisioner "powershell" {
     inline = [
       "if (Get-Service RdAgent -ErrorAction SilentlyContinue) { while ((Get-Service RdAgent).Status -ne 'Running') { Start-Sleep -s 5 } }",
       "if (Get-Service WindowsAzureGuestAgent -ErrorAction SilentlyContinue) { while ((Get-Service WindowsAzureGuestAgent).Status -ne 'Running') { Start-Sleep -s 5 } }",
       "& $env:SystemRoot\\System32\\Sysprep\\Sysprep.exe /oobe /generalize /quiet /quit /mode:vm",
-      "while ($true) { $imageState = (Get-ItemProperty HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Setup\\State).ImageState; Write-Output $imageState; if ($imageState -eq 'IMAGE_STATE_GENERALIZE_RESCHEDULE_TO_OOBE') { break }; Start-Sleep -s 10 }"
+      "$doneStates = @('IMAGE_STATE_GENERALIZE_RESCHEDULE_TO_OOBE', 'IMAGE_STATE_GENERALIZE_RESEAL_TO_OOBE'); while ($true) { $imageState = (Get-ItemProperty HKLM:\\SOFTWARE\\Microsoft\\Windows\\CurrentVersion\\Setup\\State).ImageState; Write-Output $imageState; if ($imageState -in $doneStates) { break }; Start-Sleep -s 10 }"
     ]
   }
 }
