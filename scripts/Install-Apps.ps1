@@ -110,9 +110,10 @@ Install-App 'PuTTY.PuTTY'
 # re-enabling.
 # Install-App 'dotPDN.PaintDotNet'
 Install-App 'TortoiseGit.TortoiseGit'
-# PowerShell 7 (5.1 is in-box) is installed separately, by
-# scripts/Install-PowerShell7.ps1 as the real 'packer' user - its only
-# winget installer is MSIX, which cannot be deployed under SYSTEM.
+# --installer-type wix selects the plain MSI installer instead of winget's
+# default (MSIX, which cannot deploy under SYSTEM) - see
+# https://learn.microsoft.com/powershell/scripting/install/install-powershell-on-windows#winget
+Install-App 'Microsoft.PowerShell' @('--installer-type', 'wix')   # PowerShell 7 (5.1 is in-box)
 Install-App 'Microsoft.AzureCLI'
 
 # .NET / Java / Node runtimes and SDKs - .NET 10 is the current LTS line.

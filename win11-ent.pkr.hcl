@@ -101,31 +101,6 @@ build {
     timeout           = "3h"
   }
 
-  # 2b. PowerShell 7's only winget installer is MSIX, and MSIX/AppX
-  #     deployment cannot run under SYSTEM at all (OS-level restriction, not
-  #     a winget flag/workaround) - so this one package runs as a dedicated
-  #     local admin instead, via Packer's own elevated_user, same mechanism
-  #     as every other provisioner here. It cannot reuse 'packer' itself
-  #     (the WinRM communicator's own account, winrm_username above): that
-  #     was confirmed live to hang forever (scheduled task stuck in
-  #     Queued), even with "Log on as a batch job" granted directly to it -
-  #     something about reusing the account that already holds the build's
-  #     WinRM session. A fresh, otherwise-idle account avoids that.
-  provisioner "powershell" {
-    script            = "${path.root}/scripts/New-PowerShell7InstallUser.ps1"
-    elevated_user     = "SYSTEM"
-    elevated_password = ""
-    environment_vars  = ["PACKER_PS7_INSTALL_PWD=${build.WinRMPassword}"]
-    timeout           = "10m"
-  }
-
-  provisioner "powershell" {
-    script            = "${path.root}/scripts/Install-PowerShell7.ps1"
-    elevated_user     = "ps7installer"
-    elevated_password = "${build.WinRMPassword}"
-    timeout           = "10m"
-  }
-
   # 3. Reboot to flush pending operations (Visual Studio, runtimes, OLE DB driver).
   provisioner "windows-restart" {
     restart_timeout = "30m"
