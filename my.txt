@@ -4,6 +4,15 @@
 # registered for SYSTEM, so winget.exe is run straight from its install
 # folder. Run that way it cannot load the VC++ runtime it normally gets from
 # its package dependencies, so the VC++ redistributable is installed first.
+
+# Software to install, as winget package IDs (find one with: winget search <name>)
+$packages = @(
+    'Google.Chrome'
+    'Mozilla.Firefox'
+    'Microsoft.AzureCLI'
+    'Microsoft.DotNet.SDK.10'   # .NET 10 SDK, includes the runtimes
+)
+
 $ErrorActionPreference = 'Stop'
 $ProgressPreference    = 'SilentlyContinue'
 
@@ -19,8 +28,7 @@ $appInstaller = Get-AppxPackage -AllUsers -Name Microsoft.DesktopAppInstaller |
 if (-not $appInstaller) { throw 'winget (Microsoft.DesktopAppInstaller) is not on the base image' }
 $winget = Join-Path $appInstaller.InstallLocation 'winget.exe'
 
-foreach ($id in 'Google.Chrome', 'Mozilla.Firefox', 'Microsoft.AzureCLI', 'Microsoft.DotNet.SDK.10') {
-    & $winget install --id $id --exact --source winget --scope machine --silent `
-        --disable-interactivity --accept-package-agreements --accept-source-agreements
+foreach ($id in $packages) {
+    & $winget install --id $id --exact --source winget --scope machine --silent --disable-interactivity --accept-package-agreements --accept-source-agreements
     if ($LASTEXITCODE -ne 0) { throw ('winget install {0} failed with exit code 0x{1:X8}' -f $id, $LASTEXITCODE) }
 }
